@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Murmuration + Sunset</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: black;
+    }
+    canvas {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="visualizer"></canvas>
+
+  <script>
+    const canvas = document.getElementById('visualizer');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    window.addEventListener('resize', () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    });
+
+    // ---------- SUNSET BACKGROUND ----------
+    let clouds = [], sunsetProgress = 0;
+    for (let i = 0; i < 5; i++) {
+      clouds.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height * 0.3, speed: 0.3 + Math.random() * 0.3 });
+    }
+
+    function getSkyColor(progress) {
+      const colors = ['#FFB464', '#FF6633', '#C83250', '#781478', '#1E003C'];
+      const index = Math.floor(progress * (colors.length - 1));
+      const c1 = colors[index], c2 = colors[index + 1] || c1;
+      return blendColors(c1, c2, (progress * (colors.length - 1)) % 1);
+    }
+
+    function blendColors(c1, c2, t) {
+      const parse = c => c.match(/\w\w/g).map(x => parseInt(x, 16));
+      const [r1, g1, b1] = parse(c1), [r2, g2, b2] = parse(c2);
+      return `rgb(${r1 + (r2 - r1) * t}, ${g1 + (g2 - g1) * t}, ${b1 + (b2 - b1) * t})`;
+    }
+
+    function drawBackground() {
+      sunsetProgress = Math.min(performance.now() / (1000 * 60 * 5), 1);
+      ctx.fillStyle = getSkyColor(sunsetProgress);
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      for (let cloud of clouds) {
+        cloud.x += cloud.speed;
+        if (cloud.x > canvas.width + 50) cloud.x = -50;
+        ctx.fillStyle = `rgba(255,200,200,${1 - sunsetProgress})`;
+        ctx.fillRect(cloud.x, cloud.y, 40, 40);
+        ctx.fillRect(cloud.x + 20, cloud.y + 10, 30, 30);
+        ctx.fillRect(cloud.x - 20, cloud.y + 5, 35, 35);
+      }
+
+      drawPixelSun(sunsetProgress);
+      drawOcean();
+    }
+
+    function drawPixelSun(progress) {
+      const sunX = canvas.width / 2;
+      const sunY = canvas.height * 0.85;
+      const sunSize = 20 + (1 - progress) * 60;
+      const glowSize = sunSize * 2;
+
+      for (let i = glowSize; i > sunSize; i -= 8) {
+        ctx.fillStyle = `rgba(255,120,0,${(glowSize - i) / glowSize})`;
+        ctx.fillRect(sunX - i/2, sunY - i/2, i, i);
+      }
+      ctx.fillStyle = 'rgb(255,150,0)';
+      ctx.fillRect(sunX - sunSize/2, sunY - sunSize/2, sunSize, sunSize);
+      ctx.fillStyle = 'rgb(255,200,0)';
+      ctx.fillRect(sunX - 5, sunY - 5, sunSize * 0.6, sunSize * 0.6);
+      ctx.fillRect(sunX + 5, sunY + 5, sunSize * 0.6, sunSize * 0.6);
+    }
+
+    function drawOcean() {
+      const oceanTop = canvas.height * 0.9;
+      for (let i = oceanTop; i < canvas.height; i++) {
+        const grad = (i - oceanTop) / (canvas.height - oceanTop);
+        ctx.strokeStyle = `rgb(${10 + grad*10}, ${20 + grad*20}, ${80 + grad*40})`;
+        ctx.beginPath();
+        ctx.moveTo(0, i);
+        ctx.lineTo(canvas.width, i);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.beginPath();
+      ctx.moveTo(0, oceanTop);
+      ctx.lineTo(canvas.width, oceanTop);
+      ctx.stroke();
+    }
+
+    // ---------- MURMURATION BIRDS ----------
+    const flockSize = 300;
+    const flock = [];
+    const MIN_DISTANCE = 50;
+    const MAX_DISTANCE = 100;
+
+    class Bird {
+      constructor() {
+        const cx = canvas.width / 2, cy = canvas.height / 2;
+        this.x = cx + (Math.random() - 0.5) * 2000;
+        this.y = cy + (Math.random() - 0.5) * 2000;
+        this.vx = Math.random() * 2 - 1;
+        this.vy = Math.random() * 2 - 1;
+        this.size = 2 + Math.random() * 2;
+        this.color = 'black';
+      }
+
+      update(avgAudio, waveformData) {
+        let avoidX = 0, avoidY = 0, centerX = 0, centerY = 0;
+        let alignVX = 0, alignVY = 0, nearbyCount = 0, avoidCount = 0;
+
+        for (const other of flock) {
+          if (other === this) continue;
+          const dx = other.x - this.x;
+          const dy = other.y - this.y;
+          const dist = Math.hypot(dx, dy);
+
+          if (dist < MIN_DISTANCE) {
+            avoidX -= dx;
+            avoidY -= dy;
+            avoidCount++;
+          } else if (dist < MAX_DISTANCE) {
+            centerX += other.x;
+            centerY += other.y;
+            alignVX += other.vx;
+            alignVY += other.vy;
+            nearbyCount++;
+          }
+        }
+
+        if (avoidCount > 0) {
+          this.vx += avoidX / avoidCount * 0.05;
+          this.vy += avoidY / avoidCount * 0.05;
+        }
+
+        if (nearbyCount > 0) {
+          centerX /= nearbyCount;
+          centerY /= nearbyCount;
+          this.vx += (centerX - this.x) * 0.002;
+          this.vy += (centerY - this.y) * 0.002;
+          this.vx += (alignVX / nearbyCount - this.vx) * 0.01;
+          this.vy += (alignVY / nearbyCount - this.vy) * 0.01;
+        }
+
+        this.vx += (Math.random() - 0.5) * 0.2;
+        this.vy += (Math.random() - 0.5) * 0.2;
+
+        const speedLimit = Math.max(0.5, avgAudio / 50);
+        const speed = Math.hypot(this.vx, this.vy);
+        if (speed > speedLimit) {
+          this.vx = (this.vx / speed) * speedLimit;
+          this.vy = (this.vy / speed) * speedLimit;
+        }
+
+        const waveformIndex = Math.floor(this.x / canvas.width * waveformData.length);
+        const waveformHeight = waveformData[waveformIndex] / 255 * canvas.height;
+        this.y += (waveformHeight - this.y) * 0.05;
+
+        this.x += this.vx;
+
+        if (this.x < 0) this.x = canvas.width;
+        if (this.x > canvas.width) this.x = 0;
+        if (this.y < 0) this.y = canvas.height;
+        if (this.y > canvas.height) this.y = 0;
+      }
+
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+      }
+    }
+
+    for (let i = 0; i < flockSize; i++) {
+      flock.push(new Bird());
+    }
+
+    async function initVisualizer() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioCtx.createMediaStreamSource(stream);
+        const analyser = audioCtx.createAnalyser();
+
+        analyser.fftSize = 256;
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+
+        source.connect(analyser);
+
+        function draw() {
+          requestAnimationFrame(draw);
+          analyser.getByteFrequencyData(dataArray);
+          const avg = dataArray.reduce((a, b) => a + b, 0) / bufferLength;
+          const waveformData = new Uint8Array(bufferLength);
+          analyser.getByteFrequencyData(waveformData);
+
+          drawBackground();
+
+          for (const bird of flock) {
+            bird.update(avg, waveformData);
+            bird.draw();
+          }
+        }
+
+        draw();
+      } catch (err) {
+        alert('Microphone access denied or not supported.');
+        console.error(err);
+      }
+    }
+
+    initVisualizer();
+  </script>
+</body>
+</html>
