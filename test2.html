@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <title>Starling Murmuration with Pixel Sunset</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/addons/p5.sound.min.js"></script>
   <style>
     body {
       margin: 0;
@@ -18,15 +19,14 @@
 <body>
 <script>
 let clouds = [], waveOffset = 0, sunsetProgress = 0;
-let flock = [], flockSize = 300;
+let flock = [];
 let mic, fft;
+const flockSize = 300;
 const MIN_DISTANCE = 50;
 const MAX_DISTANCE = 100;
 
 function setup() {
-  createCanvas(windowWidth, windowHeight);
-  noStroke();
-
+  createCanvas(window.innerWidth, window.innerHeight);
   for (let i = 0; i < 5; i++) {
     clouds.push(new Cloud(random(width), random(height * 0.3)));
   }
@@ -37,41 +37,28 @@ function setup() {
 
   mic = new p5.AudioIn();
   mic.start();
-  fft = new p5.FFT(0.8, 256);
+  fft = new p5.FFT();
   fft.setInput(mic);
 }
 
 function draw() {
   sunsetProgress = min(frameCount / (60 * 5 * 60), 1);
   background(getSkyColor(sunsetProgress));
-
-  for (let cloud of clouds) {
-    cloud.update();
-    cloud.show();
-  }
-
+  for (let cloud of clouds) { cloud.update(); cloud.show(); }
   drawPixelArtSun(sunsetProgress);
   drawOcean();
 
-  const spectrum = fft.analyze();
-  const waveform = fft.waveform();
-  const avgAudio = spectrum.reduce((a, b) => a + b, 0) / spectrum.length;
+  let spectrum = fft.analyze();
+  let avgAudio = spectrum.reduce((a, b) => a + b, 0) / spectrum.length;
 
-  for (let bird of flock) {
+  for (const bird of flock) {
     bird.update(avgAudio, flock, spectrum);
     bird.draw();
   }
 }
 
-// --- Background drawing ---
 function getSkyColor(progress) {
-  let colors = [
-    color(255, 180, 100),
-    color(255, 102, 51),
-    color(200, 50, 80),
-    color(120, 20, 120),
-    color(30, 0, 60)
-  ];
+  let colors = [color(255, 180, 100), color(255, 102, 51), color(200, 50, 80), color(120, 20, 120), color(30, 0, 60)];
   let index = floor(progress * (colors.length - 1));
   return lerpColor(colors[index], colors[min(index + 1, colors.length - 1)], (progress * (colors.length - 1)) % 1);
 }
@@ -81,11 +68,9 @@ function drawPixelArtSun(progress) {
   noSmooth();
   for (let i = glowSize; i > sunSize; i -= 8) {
     fill(255, 120, 0, map(i, glowSize, sunSize, 80, 5));
-    rectMode(CENTER);
-    rect(sunX, sunY, i, i);
+    rectMode(CENTER); rect(sunX, sunY, i, i);
   }
-  fill(255, 150, 0);
-  rect(sunX, sunY, sunSize, sunSize);
+  fill(255, 150, 0); rect(sunX, sunY, sunSize, sunSize);
   fill(255, 200, 0);
   rect(sunX - 5, sunY - 5, sunSize * 0.6, sunSize * 0.6);
   rect(sunX + 5, sunY + 5, sunSize * 0.6, sunSize * 0.6);
@@ -97,30 +82,18 @@ function drawOcean() {
     stroke(lerpColor(color(20, 40, 120), color(10, 20, 80), map(i, oceanTop, height, 0, 1)));
     line(0, i, width, i);
   }
-  stroke(255, 200);
-  line(0, oceanTop, width, oceanTop);
+  stroke(255, 200); line(0, oceanTop, width, oceanTop);
 }
 
 class Cloud {
-  constructor(x, y) {
-    this.x = x;
-    this.y = y;
-    this.speed = random(0.3, 0.6);
-  }
-  update() {
-    this.x += this.speed;
-    if (this.x > width + 50) this.x = -50;
-  }
+  constructor(x, y) { this.x = x; this.y = y; this.speed = random(0.3, 0.6); }
+  update() { this.x += this.speed; if (this.x > width + 50) this.x = -50; }
   show() {
-    noStroke();
-    fill(255, 200, 200, 200 - (sunsetProgress * 150));
-    rect(this.x, this.y, 40, 40);
-    rect(this.x + 20, this.y + 10, 30, 30);
-    rect(this.x - 20, this.y + 5, 35, 35);
+    noStroke(); fill(255, 200, 200, 200 - (sunsetProgress * 150));
+    rect(this.x, this.y, 40, 40); rect(this.x + 20, this.y + 10, 30, 30); rect(this.x - 20, this.y + 5, 35, 35);
   }
 }
 
-// --- Bird class ---
 class Bird {
   constructor() {
     const centerX = width / 2;
@@ -143,7 +116,7 @@ class Bird {
       if (other === this) continue;
       const dx = other.x - this.x;
       const dy = other.y - this.y;
-      const dist = Math.hypot(dx, dy);
+      const dist = sqrt(dx * dx + dy * dy);
 
       if (dist < MIN_DISTANCE) {
         avoidX -= dx;
@@ -172,11 +145,11 @@ class Bird {
       this.vy += (alignVY / nearbyCount - this.vy) * 0.01;
     }
 
-    this.vx += (random() - 0.5) * 0.2;
-    this.vy += (random() - 0.5) * 0.2;
+    this.vx += random(-0.1, 0.1);
+    this.vy += random(-0.1, 0.1);
 
     const speedLimit = max(0.5, avgAudio / 50);
-    const speed = Math.hypot(this.vx, this.vy);
+    const speed = sqrt(this.vx * this.vx + this.vy * this.vy);
     if (speed > speedLimit) {
       this.vx = (this.vx / speed) * speedLimit;
       this.vy = (this.vy / speed) * speedLimit;
@@ -187,7 +160,6 @@ class Bird {
     this.y += (waveformHeight - this.y) * 0.05;
 
     this.x += this.vx;
-
     if (this.x < 0) this.x = width;
     if (this.x > width) this.x = 0;
     if (this.y < 0) this.y = height;
@@ -195,8 +167,8 @@ class Bird {
   }
 
   draw() {
-    fill(this.color);
     noStroke();
+    fill(this.color);
     ellipse(this.x, this.y, this.size, this.size);
   }
 }
