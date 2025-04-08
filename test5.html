@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Moving Birds Visualizer</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/addons/p5.sound.min.js"></script>
+  <style>
+    body { margin: 0; overflow: hidden; background-color: black; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <script>
+    let clouds = [], sunsetProgress = 0;
+    let mic, fft, amplitude;
+    let birds = [];
+    let flockSize = 80;
+
+    function setup() {
+      createCanvas(window.innerWidth, window.innerHeight);
+
+      // Clouds
+      for (let i = 0; i < 5; i++) {
+        clouds.push(new Cloud(random(width), random(height * 0.3)));
+      }
+
+      // Microphone setup
+      mic = new p5.AudioIn();
+      mic.start();
+
+      // FFT + amplitude
+      fft = new p5.FFT();
+      fft.setInput(mic);
+      amplitude = new p5.Amplitude();
+      amplitude.setInput(mic);
+
+      // Birds
+      for (let i = 0; i < flockSize; i++) {
+        birds.push(new Bird());
+      }
+
+      userStartAudio();
+    }
+
+    function draw() {
+      sunsetProgress = min(frameCount / (60 * 5 * 60), 1);
+      background(getSkyColor(sunsetProgress));
+
+      for (let cloud of clouds) {
+        cloud.update();
+        cloud.show();
+      }
+
+      drawPixelArtSun(sunsetProgress);
+      drawOcean();
+
+      let level = amplitude.getLevel(); // range ~ 0 to 1
+
+      for (let bird of birds) {
+        bird.update(level);
+        bird.show();
+      }
+    }
+
+    function getSkyColor(progress) {
+      let colors = [color(255, 180, 100), color(255, 102, 51), color(200, 50, 80), color(120, 20, 120), color(30, 0, 60)];
+      let index = floor(progress * (colors.length - 1));
+      return lerpColor(colors[index], colors[min(index + 1, colors.length - 1)], (progress * (colors.length - 1)) % 1);
+    }
+
+    function drawPixelArtSun(progress) {
+      let sunX = width * 0.5, sunY = height * 0.85, sunSize = map(progress, 0, 1, 80, 20), glowSize = sunSize * 2;
+      noSmooth();
+      for (let i = glowSize; i > sunSize; i -= 8) {
+        fill(255, 120, 0, map(i, glowSize, sunSize, 80, 5));
+        rectMode(CENTER); rect(sunX, sunY, i, i);
+      }
+      fill(255, 150, 0); rect(sunX, sunY, sunSize, sunSize);
+      fill(255, 200, 0);
+      rect(sunX - 5, sunY - 5, sunSize * 0.6, sunSize * 0.6);
+      rect(sunX + 5, sunY + 5, sunSize * 0.6, sunSize * 0.6);
+    }
+
+    function drawOcean() {
+      let oceanTop = height * 0.9;
+      for (let i = oceanTop; i < height; i++) {
+        stroke(lerpColor(color(20, 40, 120), color(10, 20, 80), map(i, oceanTop, height, 0, 1)));
+        line(0, i, width, i);
+      }
+      stroke(255, 200); line(0, oceanTop, width, oceanTop);
+    }
+
+    class Cloud {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.speed = random(0.3, 0.6);
+      }
+      update() {
+        this.x += this.speed;
+        if (this.x > width + 50) this.x = -50;
+      }
+      show() {
+        noStroke();
+        fill(255, 200, 200, 200 - (sunsetProgress * 150));
+        rect(this.x, this.y, 40, 40);
+        rect(this.x + 20, this.y + 10, 30, 30);
+        rect(this.x - 20, this.y + 5, 35, 35);
+      }
+    }
+
+    class Bird {
+      constructor() {
+        this.x = random(width);
+        this.y = random(height);
+        this.size = 10;
+        this.velocity = createVector(random(-1, 1), random(-1, 1));
+        this.color = color(255);
+      }
+
+      update(level) {
+        let speedBoost = map(level, 0, 0.3, 0.5, 3);
+        this.x += this.velocity.x * speedBoost;
+        this.y += this.velocity.y * speedBoost;
+
+        // Wrap around edges
+        if (this.x > width) this.x = 0;
+        if (this.x < 0) this.x = width;
+        if (this.y > height) this.y = 0;
+        if (this.y < 0) this.y = height;
+      }
+
+      show() {
+        fill(this.color);
+        noStroke();
+        triangle(this.x, this.y,
+                 this.x - this.size, this.y + this.size / 2,
+                 this.x - this.size, this.y - this.size / 2);
+      }
+    }
+
+    function mousePressed() {
+      if (getAudioContext().state !== 'running') {
+        userStartAudio();
+      }
+    }
+  </script>
+</body>
+</html>
