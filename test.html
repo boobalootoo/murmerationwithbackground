@@ -2,50 +2,71 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Starling Murmuration Visualizer with Background</title>
+  <title>Murmuration Visualizer</title>
   <style>
     body {
       margin: 0;
       overflow: hidden;
-      background: transparent;
     }
     canvas {
-      display: block;
-      background: transparent;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+    #background {
+      z-index: 0;
+    }
+    #visualizer {
+      z-index: 1;
+      pointer-events: none; /* allows clicks to pass through */
+    }
+    #startButton {
+      position: absolute;
+      z-index: 2;
+      top: 20px;
+      left: 20px;
+      font-size: 18px;
+      padding: 10px;
     }
   </style>
 </head>
 <body>
-  <!-- Container for the background -->
-  <iframe src="https://boobalootoo.github.io/murmerationwithbackground/background.html" 
-          style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none;"></iframe>
-
-  <!-- Canvas for birds -->
+  <canvas id="background"></canvas>
   <canvas id="visualizer"></canvas>
+  <button id="startButton">Start Visualizer</button>
 
   <script>
-    const canvas = document.getElementById('visualizer');
-    const ctx = canvas.getContext('2d');
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    const backgroundCanvas = document.getElementById('background');
+    const visualizerCanvas = document.getElementById('visualizer');
+    const backgroundCtx = backgroundCanvas.getContext('2d');
+    const ctx = visualizerCanvas.getContext('2d');
+    backgroundCanvas.width = visualizerCanvas.width = window.innerWidth;
+    backgroundCanvas.height = visualizerCanvas.height = window.innerHeight;
 
     window.addEventListener('resize', () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      backgroundCanvas.width = visualizerCanvas.width = window.innerWidth;
+      backgroundCanvas.height = visualizerCanvas.height = window.innerHeight;
+      drawBackground();
     });
 
-    const flockSize = 300; // Increased flock size to 300
-    const flock = [];
-    const MIN_DISTANCE = 50; // Increased minimum distance to 50
-    const MAX_DISTANCE = 100; // Decreased maximum distance to 100 to keep the group together
+    function drawBackground() {
+      // Example: Sky gradient
+      const gradient = backgroundCtx.createLinearGradient(0, 0, 0, backgroundCanvas.height);
+      gradient.addColorStop(0, "#87CEEB");
+      gradient.addColorStop(1, "#ffffff");
+      backgroundCtx.fillStyle = gradient;
+      backgroundCtx.fillRect(0, 0, backgroundCanvas.width, backgroundCanvas.height);
+    }
+
+    // Call immediately to draw background
+    drawBackground();
 
     class Bird {
       constructor() {
-        const centerX = canvas.width / 2;
-        const centerY = canvas.height / 2;
-        // Further increase the spread by adjusting the random offsets
-        this.x = centerX + (Math.random() - 0.5) * 2000; // Further increased spread range to 2000
-        this.y = centerY + (Math.random() - 0.5) * 2000; // Further increased spread range to 2000
+        const centerX = visualizerCanvas.width / 2;
+        const centerY = visualizerCanvas.height / 2;
+        this.x = centerX + (Math.random() - 0.5) * 2000;
+        this.y = centerY + (Math.random() - 0.5) * 2000;
         this.vx = Math.random() * 2 - 1;
         this.vy = Math.random() * 2 - 1;
         this.size = 2 + Math.random() * 2;
@@ -53,22 +74,18 @@
       }
 
       update(avgAudio, flock, waveformData) {
-        let avoidX = 0, avoidY = 0;
-        let centerX = 0, centerY = 0;
-        let alignVX = 0, alignVY = 0;
-        let nearbyCount = 0, avoidCount = 0;
-
+        let avoidX = 0, avoidY = 0, centerX = 0, centerY = 0;
+        let alignVX = 0, alignVY = 0, nearbyCount = 0, avoidCount = 0;
         for (const other of flock) {
           if (other === this) continue;
           const dx = other.x - this.x;
           const dy = other.y - this.y;
           const dist = Math.hypot(dx, dy);
-
-          if (dist < MIN_DISTANCE) {
+          if (dist < 50) {
             avoidX -= dx;
             avoidY -= dy;
             avoidCount++;
-          } else if (dist < MAX_DISTANCE) {
+          } else if (dist < 100) {
             centerX += other.x;
             centerY += other.y;
             alignVX += other.vx;
@@ -76,25 +93,19 @@
             nearbyCount++;
           }
         }
-
-        if (avoidCount > 0) {
+        if (avoidCount) {
           this.vx += avoidX / avoidCount * 0.05;
           this.vy += avoidY / avoidCount * 0.05;
         }
-
-        if (nearbyCount > 0) {
+        if (nearbyCount) {
           centerX /= nearbyCount;
           centerY /= nearbyCount;
-          // Reduced the attraction towards the center of the flock (less cohesion)
           this.vx += (centerX - this.x) * 0.002;
           this.vy += (centerY - this.y) * 0.002;
-
-          // Less alignment force, so birds won't all align as much
           this.vx += (alignVX / nearbyCount - this.vx) * 0.01;
           this.vy += (alignVY / nearbyCount - this.vy) * 0.01;
         }
 
-        // Add more randomness to the velocity to avoid clustering
         this.vx += (Math.random() - 0.5) * 0.2;
         this.vy += (Math.random() - 0.5) * 0.2;
 
@@ -105,20 +116,16 @@
           this.vy = (this.vy / speed) * speedLimit;
         }
 
-        // Get the position from the waveform
-        const waveformIndex = Math.floor(this.x / canvas.width * waveformData.length);
-        const waveformHeight = waveformData[waveformIndex] / 255 * canvas.height; // Scale to canvas height
-
-        // Move the bird towards the waveform height
-        this.y += (waveformHeight - this.y) * 0.05; // Smoothly follow the waveform
+        const waveformIndex = Math.floor(this.x / visualizerCanvas.width * waveformData.length);
+        const waveformHeight = waveformData[waveformIndex] / 255 * visualizerCanvas.height;
+        this.y += (waveformHeight - this.y) * 0.05;
 
         this.x += this.vx;
 
-        // Wrap edges
-        if (this.x < 0) this.x = canvas.width;
-        if (this.x > canvas.width) this.x = 0;
-        if (this.y < 0) this.y = canvas.height;
-        if (this.y > canvas.height) this.y = 0;
+        if (this.x < 0) this.x = visualizerCanvas.width;
+        if (this.x > visualizerCanvas.width) this.x = 0;
+        if (this.y < 0) this.y = visualizerCanvas.height;
+        if (this.y > visualizerCanvas.height) this.y = 0;
       }
 
       draw() {
@@ -129,9 +136,7 @@
       }
     }
 
-    for (let i = 0; i < flockSize; i++) {
-      flock.push(new Bird());
-    }
+    const flock = Array.from({ length: 300 }, () => new Bird());
 
     async function initVisualizer() {
       try {
@@ -143,7 +148,6 @@
         analyser.fftSize = 256;
         const bufferLength = analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
-
         source.connect(analyser);
 
         function draw() {
@@ -151,31 +155,10 @@
           analyser.getByteFrequencyData(dataArray);
           const avg = dataArray.reduce((a, b) => a + b, 0) / bufferLength;
 
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-          // Get waveform data to influence birds' movement
+          ctx.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
           const waveformData = new Uint8Array(bufferLength);
           analyser.getByteFrequencyData(waveformData);
 
-          // Draw the waveform line
-          ctx.beginPath();
-          const barWidth = canvas.width / bufferLength;
-          for (let i = 0; i < bufferLength; i++) {
-            const barHeight = waveformData[i];
-            const x = barWidth * i;
-            const y = canvas.height / 2 - barHeight / 2; // Center the waveform vertically
-
-            if (i === 0) {
-              ctx.moveTo(x, y);
-            } else {
-              ctx.lineTo(x, y);
-            }
-          }
-          ctx.strokeStyle = '#00FF00'; // Green color for waveform
-          ctx.lineWidth = 2;
-          ctx.stroke();
-
-          // Draw the birds
           for (const bird of flock) {
             bird.update(avg, flock, waveformData);
             bird.draw();
@@ -189,7 +172,10 @@
       }
     }
 
-    initVisualizer();
+    document.getElementById('startButton').addEventListener('click', () => {
+      initVisualizer();
+      document.getElementById('startButton').style.display = 'none';
+    });
   </script>
 </body>
 </html>
