@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Starling Murmuration Visualizer</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: transparent;
+    }
+    canvas {
+      display: block;
+      background: transparent;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="visualizer"></canvas>
+
+  <script>
+    const canvas = document.getElementById('visualizer');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    window.addEventListener('resize', () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    });
+
+    const flockSize = 300; // Increased flock size to 300
+    const flock = [];
+    const MIN_DISTANCE = 50; // Increased minimum distance to 50
+    const MAX_DISTANCE = 100; // Decreased maximum distance to 100 to keep the group together
+
+    class Bird {
+      constructor() {
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        // Further increase the spread by adjusting the random offsets
+        this.x = centerX + (Math.random() - 0.5) * 2000; // Further increased spread range to 2000
+        this.y = centerY + (Math.random() - 0.5) * 2000; // Further increased spread range to 2000
+        this.vx = Math.random() * 2 - 1;
+        this.vy = Math.random() * 2 - 1;
+        this.size = 2 + Math.random() * 2;
+        this.color = 'black';
+      }
+
+      update(avgAudio, flock, waveformData) {
+        let avoidX = 0, avoidY = 0;
+        let centerX = 0, centerY = 0;
+        let alignVX = 0, alignVY = 0;
+        let nearbyCount = 0, avoidCount = 0;
+
+        for (const other of flock) {
+          if (other === this) continue;
+          const dx = other.x - this.x;
+          const dy = other.y - this.y;
+          const dist = Math.hypot(dx, dy);
+
+          if (dist < MIN_DISTANCE) {
+            avoidX -= dx;
+            avoidY -= dy;
+            avoidCount++;
+          } else if (dist < MAX_DISTANCE) {
+            centerX += other.x;
+            centerY += other.y;
+            alignVX += other.vx;
+            alignVY += other.vy;
+            nearbyCount++;
+          }
+        }
+
+        if (avoidCount > 0) {
+          this.vx += avoidX / avoidCount * 0.05;
+          this.vy += avoidY / avoidCount * 0.05;
+        }
+
+        if (nearbyCount > 0) {
+          centerX /= nearbyCount;
+          centerY /= nearbyCount;
+          // Reduced the attraction towards the center of the flock (less cohesion)
+          this.vx += (centerX - this.x) * 0.002;
+          this.vy += (centerY - this.y) * 0.002;
+
+          // Less alignment force, so birds won't all align as much
+          this.vx += (alignVX / nearbyCount - this.vx) * 0.01;
+          this.vy += (alignVY / nearbyCount - this.vy) * 0.01;
+        }
+
+        // Add more randomness to the velocity to avoid clustering
+        this.vx += (Math.random() - 0.5) * 0.2;
+        this.vy += (Math.random() - 0.5) * 0.2;
+
+        const speedLimit = Math.max(0.5, avgAudio / 50);
+        const speed = Math.hypot(this.vx, this.vy);
+        if (speed > speedLimit) {
+          this.vx = (this.vx / speed) * speedLimit;
+          this.vy = (this.vy / speed) * speedLimit;
+        }
+
+        // Get the position from the waveform
+        const waveformIndex = Math.floor(this.x / canvas.width * waveformData.length);
+        const waveformHeight = waveformData[waveformIndex] / 255 * canvas.height; // Scale to canvas height
+
+        // Move the bird towards the waveform height
+        this.y += (waveformHeight - this.y) * 0.05; // Smoothly follow the waveform
+
+        this.x += this.vx;
+
+        // Wrap edges
+        if (this.x < 0) this.x = canvas.width;
+        if (this.x > canvas.width) this.x = 0;
+        if (this.y < 0) this.y = canvas.height;
+        if (this.y > canvas.height) this.y = 0;
+      }
+
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+      }
+    }
+
+    for (let i = 0; i < flockSize; i++) {
+      flock.push(new Bird());
+    }
+
+    async function initVisualizer() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioCtx.createMediaStreamSource(stream);
+        const analyser = audioCtx.createAnalyser();
+
+        analyser.fftSize = 256;
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+
+        source.connect(analyser);
+
+        function draw() {
+          requestAnimationFrame(draw);
+          analyser.getByteFrequencyData(dataArray);
+          const avg = dataArray.reduce((a, b) => a + b, 0) / bufferLength;
+
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          // Get waveform data to influence birds' movement
+          const waveformData = new Uint8Array(bufferLength);
+          analyser.getByteFrequencyData(waveformData);
+
+          // Draw the waveform line
+          ctx.beginPath();
+          const barWidth = canvas.width / bufferLength;
+          for (let i = 0; i < bufferLength; i++) {
+            const barHeight = waveformData[i];
+            const x = barWidth * i;
+            const y = canvas.height / 2 - barHeight / 2; // Center the waveform vertically
+
+            if (i === 0) {
+              ctx.moveTo(x, y);
+            } else {
+              ctx.lineTo(x, y);
+            }
+          }
+          ctx.strokeStyle = '#00FF00'; // Green color for waveform
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          // Draw the birds
+          for (const bird of flock) {
+            bird.update(avg, flock, waveformData);
+            bird.draw();
+          }
+        }
+
+        draw();
+      } catch (err) {
+        alert('Microphone access denied or not supported.');
+        console.error(err);
+      }
+    }
+
+    initVisualizer();
+  </script>
+</body>
+</html>
